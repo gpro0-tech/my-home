@@ -263,113 +263,84 @@
     </div>
 </div>
 
-<script>
-    let currentViewingIndex = -1;
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-    function openAdmin() {
-        // 관리자 비밀번호 4562 확인
-        if (prompt("관리자 비밀번호?") === "4562") {
-            const zone = document.getElementById('upload-zone');
-            zone.style.display = (zone.style.display === 'block') ? 'none' : 'block';
+    const firebaseConfig = {
+        apiKey: "AIzaSyBQtpDvleNwBW9on_DSMYnLiM4991M_a8E",
+        authDomain: "my-mini-home.firebaseapp.com",
+        projectId: "my-mini-home",
+        storageBucket: "my-mini-home.firebasestorage.app",
+        messagingSenderId: "993877587980",
+        appId: "1:993877587980:web:d01f701408dfac4237d629"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const ADMIN_PW = "4562";
+
+    // 메뉴 전환 기능
+    window.showMenu = (m, t) => {
+        document.querySelectorAll('.menu-section').forEach(s => s.classList.remove('active'));
+        document.getElementById('section-' + m).classList.add('active');
+        document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+    };
+
+    // 방명록 저장
+    window.addGuest = async () => {
+        const name = document.getElementById('guest-nickname').value || "익명";
+        const msg = document.getElementById('guest-content').value;
+        if(!msg) return alert("내용을 입력하세요!");
+        await addDoc(collection(db, "guestbook"), { name, msg, timestamp: Date.now(), date: new Date().toLocaleString() });
+        document.getElementById('guest-content').value = "";
+    };
+
+    // 방명록 불러오기 (실시간)
+    onSnapshot(query(collection(db, "guestbook"), orderBy("timestamp", "desc")), (snap) => {
+        const list = document.getElementById('grid-guest');
+        list.innerHTML = snap.docs.map(d => `
+            <div class="guest-item">
+                <div class="guest-info"><span>${d.data().name}</span><span>${d.data().date}</span></div>
+                <div style="white-space: pre-wrap;">${d.data().msg}</div>
+            </div>
+        `).join('');
+    });
+
+    // 사진 추가 (관리자)
+    window.uploadPhoto = async () => {
+        if(prompt("비밀번호?") !== ADMIN_PW) return;
+        const url = prompt("이미지 주소(URL)를 입력하세요:");
+        if(url) await addDoc(collection(db, "photos"), { url, timestamp: Date.now() });
+    };
+
+    // 사진첩 불러오기 (실시간)
+    onSnapshot(query(collection(db, "photos"), orderBy("timestamp", "desc")), (snap) => {
+        const grid = document.getElementById('grid-photo');
+        if(!grid) return;
+        grid.innerHTML = snap.docs.map(d => `
+            <div class="photo-card" onclick="window.zoomPhoto('${d.id}', '${d.data().url}')">
+                <img src="${d.data().url}">
+            </div>
+        `).join('');
+    });
+
+    // 사진 확대 및 삭제 전역 등록
+    window.zoomPhoto = (id, url) => {
+        window.selectedPhotoId = id;
+        document.getElementById('modal-img').src = url;
+        document.getElementById('photo-modal').style.display = 'flex';
+    };
+
+    window.deletePhoto = async () => {
+        if(prompt("삭제 비밀번호?") === ADMIN_PW) {
+            await deleteDoc(doc(db, "photos", window.selectedPhotoId));
+            document.getElementById('photo-modal').style.display = 'none';
         }
-    }
+    };
 
-    function savePhotoByUrl() {
-        const url = document.getElementById('img-url-input').value;
-        if (!url) return alert("주소를 입력해주세요!");
-
-        const now = new Date();
-        // 요일 계산용
-        const week = ['일', '월', '화', '수', '목', '금', '토'];
-        const dateStr = `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일`;
-        const dayStr = `${week[now.getDay()]}요일`;
-
-        const gallery = JSON.parse(localStorage.getItem('my_url_gallery') || '[]');
-        gallery.unshift({ url: url, date: dateStr, day: dayStr });
-        localStorage.setItem('my_url_gallery', JSON.stringify(gallery));
-
-        document.getElementById('img-url-input').value = "";
-        document.getElementById('upload-zone').style.display = 'none';
-        loadUrlGallery();
-    }
-
-    function loadUrlGallery() {
-        const gallery = JSON.parse(localStorage.getItem('my_url_gallery') || '[]');
-        const list = document.getElementById('photo-list');
-        list.innerHTML = "";
-        
-        if(gallery.length === 0) {
-            list.innerHTML = "<p style='text-align:center; color:#ccc; font-size:11px; margin-top:50px;'>사진이 없습니다.</p>";
-            return;
-        }
-
-        const groups = {};
-        gallery.forEach((item, index) => {
-            const d = item.date || "기타";
-            if (!groups[d]) groups[d] = { day: item.day || "", items: [] };
-            groups[d].items.push({ url: item.url || item, idx: index });
-        });
-
-        Object.keys(groups).sort().reverse().forEach(date => {
-            const groupDiv = document.createElement('div');
-            groupDiv.className = 'photo-date-group';
-            
-            groupDiv.innerHTML = `
-                <div class="date-header">
-                    <span class="date-label">${date}</span>
-                    <span class="date-sub">${groups[date].day}</span>
-                </div>
-            `;
-            
-            const grid = document.createElement('div');
-            grid.className = 'photo-grid';
-            
-            groups[date].items.forEach(photo => {
-                const imgDiv = document.createElement('div');
-                imgDiv.className = 'photo-box';
-                imgDiv.onclick = () => openZoom(photo.url, photo.idx);
-                imgDiv.innerHTML = `<img src="${photo.url}" onerror="this.src='https://via.placeholder.com/150?text=Invalid+Link'">`;
-                grid.appendChild(imgDiv);
-            });
-            
-            groupDiv.appendChild(grid);
-            list.appendChild(groupDiv);
-        });
-    }
-
-    function openZoom(src, index) {
-        currentViewingIndex = index;
-        document.getElementById('zoom-img').src = src;
-        document.getElementById('zoom-view').style.display = 'flex';
-    }
-
-    function closeZoom() {
-        document.getElementById('zoom-view').style.display = 'none';
-    }
-
-    function deleteCurrentPhoto() {
-        if (confirm("정말로 삭제할까요?")) {
-            // 관리자 비밀번호 4562 확인
-            if (prompt("관리자 비밀번호를 입력해주세요.") === "4562") {
-                let gallery = JSON.parse(localStorage.getItem('my_url_gallery') || '[]');
-                gallery.splice(currentViewingIndex, 1);
-                localStorage.setItem('my_url_gallery', JSON.stringify(gallery));
-                closeZoom();
-                loadUrlGallery();
-            } else {
-                alert("비밀번호가 틀렸습니다.");
-            }
-        }
-    }
-
-    setInterval(() => {
-        if (document.getElementById('section-photo').classList.contains('active') && 
-            document.getElementById('photo-list').innerHTML === "") {
-            loadUrlGallery();
-        }
-    }, 500);
-
-    window.onload = loadUrlGallery;
+    window.checkAdmin = (t) => { if (prompt("비밀번호?") === ADMIN_PW) showMenu('admin', t); };
 </script>
 
                 <div id="section-guest" class="menu-section">
@@ -409,153 +380,5 @@
     <button class="del-btn" onclick="deletePhoto()">이 사진 삭제</button>
 </div>
 
-<script>
-    const ADMIN_PW = "4562";
-    let widget, isPlaying = false, hasStarted = false, selectedIdx = -1;
 
-    window.onload = function() {
-        const savedData = JSON.parse(localStorage.getItem('cy-settings') || '{}');
-        applySettings(savedData);
-        if(savedData.bgmUrl) initMusic(savedData.bgmUrl);
-        renderPhotos();
-        renderGuests();
-    };
-
-    function initMusic(url) {
-        document.getElementById('player-ui').style.display = 'block';
-        const iframe = document.getElementById('sc-iframe');
-        iframe.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&auto_play=true`;
-        widget = SC.Widget(iframe);
-        widget.bind(SC.Widget.Events.READY, () => widget.setVolume(50));
-        widget.bind(SC.Widget.Events.PLAY, () => { isPlaying = true; document.getElementById('btn-toggle').innerText = '⏸'; document.getElementById('play-state').innerText = '♪ING'; });
-        widget.bind(SC.Widget.Events.PAUSE, () => { isPlaying = false; document.getElementById('btn-toggle').innerText = '▶'; document.getElementById('play-state').innerText = 'PAUSE'; });
-        widget.bind(SC.Widget.Events.PLAY_PROGRESS, (d) => { document.getElementById('progress-bar').style.width = (d.relativePosition * 100) + '%'; });
-    }
-
-    function handleFirstClick() { if(!hasStarted && widget) { widget.play(); hasStarted = true; } }
-    function togglePlay() { if(widget) widget.toggle(); }
-    function setVolume(v) { if(widget) widget.setVolume(v); }
-
-    function applySettings(d) {
-        if(d.imgUrl) document.getElementById('p-img').src = d.imgUrl;
-        if(d.outerBg) document.body.style.backgroundColor = d.outerBg;
-        if(d.themeColor) { 
-            document.documentElement.style.setProperty('--cy-blue', d.themeColor); 
-            document.getElementById('inner-outer-border').style.backgroundColor = d.themeColor; 
-        }
-        if(d.title) document.getElementById('title-text').innerText = d.title;
-        if(d.name) document.getElementById('p-name').innerText = d.name;
-        if(d.msg) document.getElementById('p-msg').innerText = d.msg;
-        
-        // 링크 버튼 반영
-        if(d.btn1Name) { document.getElementById('btn1-view').innerText = d.btn1Name; document.getElementById('btn1-view').href = d.btn1Url || '#'; }
-        if(d.btn2Name) { document.getElementById('btn2-view').innerText = d.btn2Name; document.getElementById('btn2-view').href = d.btn2Url || '#'; }
-
-        // 설정창 값 유지 (초기화 방지)
-        document.getElementById('in-img-url').value = d.imgUrl || '';
-        document.getElementById('in-bgm-url').value = d.bgmUrl || '';
-        document.getElementById('in-btn1-name').value = d.btn1Name || '';
-        document.getElementById('in-btn1-url').value = d.btn1Url || '';
-        document.getElementById('in-btn2-name').value = d.btn2Name || '';
-        document.getElementById('in-btn2-url').value = d.btn2Url || '';
-        document.getElementById('in-outer-bg').value = d.outerBg || '#83b1d2';
-        document.getElementById('in-theme-color').value = d.themeColor || '#3B87AB';
-        document.getElementById('in-title').value = d.title || '행복한 우리들의 공간 ★';
-        document.getElementById('in-name').value = d.name || '우레';
-        document.getElementById('in-msg').value = d.msg || '환영합니다!';
-    }
-
-    function saveSettings() {
-        const s = {
-            imgUrl: document.getElementById('in-img-url').value,
-            bgmUrl: document.getElementById('in-bgm-url').value,
-            outerBg: document.getElementById('in-outer-bg').value,
-            themeColor: document.getElementById('in-theme-color').value,
-            title: document.getElementById('in-title').value,
-            name: document.getElementById('in-name').value,
-            msg: document.getElementById('in-msg').value,
-            btn1Name: document.getElementById('in-btn1-name').value,
-            btn1Url: document.getElementById('in-btn1-url').value,
-            btn2Name: document.getElementById('in-btn2-name').value,
-            btn2Url: document.getElementById('in-btn2-url').value
-        };
-        localStorage.setItem('cy-settings', JSON.stringify(s));
-        alert("저장되었습니다!");
-        location.reload(); 
-    }
-
-    function uploadPhoto(input) {
-        if (input.files && input.files[0]) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const photos = JSON.parse(localStorage.getItem('ure-gallery') || '[]');
-                photos.unshift(e.target.result);
-                localStorage.setItem('ure-gallery', JSON.stringify(photos));
-                renderPhotos();
-            };
-            reader.readAsDataURL(input.files[0]);
-        }
-    }
-
-    function renderPhotos() {
-        const photos = JSON.parse(localStorage.getItem('ure-gallery') || '[]');
-        const grid = document.getElementById('grid-photo');
-        grid.innerHTML = photos.map((src, i) => `
-            <div class="photo-card" onclick="openPhoto(${i}, '${src}')">
-                <img src="${src}">
-            </div>
-        `).join('');
-    }
-
-    function openPhoto(idx, src) {
-        selectedIdx = idx;
-        document.getElementById('modal-img').src = src;
-        document.getElementById('photo-modal').style.display = 'flex';
-    }
-
-    function deletePhoto() {
-        if(confirm("정말 삭제할까요?") && prompt("PW?") === ADMIN_PW) {
-            let photos = JSON.parse(localStorage.getItem('ure-gallery') || '[]');
-            photos.splice(selectedIdx, 1);
-            localStorage.setItem('ure-gallery', JSON.stringify(photos));
-            document.getElementById('photo-modal').style.display = 'none';
-            renderPhotos();
-        }
-    }
-
-    function addGuest() {
-        const n = document.getElementById('guest-nickname').value || '익명';
-        const c = document.getElementById('guest-content').value;
-        const d = new Date().toLocaleString('ko-KR', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
-        if(!c) return alert("내용을 입력하세요!");
-
-        const guests = JSON.parse(localStorage.getItem('ure-guests') || '[]');
-        guests.unshift({ nick: n, content: c, date: d });
-        localStorage.setItem('ure-guests', JSON.stringify(guests));
-        
-        document.getElementById('guest-content').value = "";
-        renderGuests();
-    }
-
-    function renderGuests() {
-        const guests = JSON.parse(localStorage.getItem('ure-guests') || '[]');
-        document.getElementById('grid-guest').innerHTML = guests.map(g => `
-            <div class="guest-item">
-                <div class="guest-right">
-                    <div class="guest-info"><span>${g.nick}</span><span class="guest-date">${g.date}</span></div>
-                    <div style="white-space: pre-wrap;">${g.content}</div>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    function showMenu(m, t) {
-        document.querySelectorAll('.menu-section').forEach(s => s.classList.remove('active'));
-        document.getElementById('section-' + m).classList.add('active');
-        document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-        t.classList.add('active');
-    }
-
-    function checkAdmin(t) { if (prompt("비밀번호?") === ADMIN_PW) showMenu('admin', t); }
-</script>
 </body></html>
